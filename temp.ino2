@@ -1,0 +1,146 @@
+#include <OneWire.h>
+#include <SoftwareSerial.h>
+#include <SerLCD.h>
+#include <ArduinoJson.h>
+
+SerLCD lcd; 
+
+char tmpstring[10];
+
+//Temperature chip i/o
+OneWire ds0(A2);
+OneWire ds1(A3);
+
+int RELAY_ON_PIN = 12;
+int RELAY_PLUS_PIN = 13;
+int ON = LOW;
+
+SoftwareSerial display(6, 5);
+SoftwareSerial esp(3, 2);
+
+StaticJsonDocument<400> doc;
+
+void initLCD() {
+  lcd.setBacklight(208, 240, 192); //Set backlight to bright white
+  lcd.setContrast(10); //Set contrast. Lower to 0 for higher contrast.
+
+  lcd.clear(); //Clear the display - this moves the cursor to home position as well
+  lcd.print("BrewOne");
+}
+
+void initESP() {
+  Serial.write("Initializing ESP...\n");
+  delay(500);
+  String espTmp;
+
+  while (!esp.available()) {
+    delay(100);
+  }
+
+  while (!espTmp.startsWith("{\"status\":\"ready\"}")) {
+    delay(500);
+    esp.write("OK\n");
+    while (!esp.available()) {
+      delay(100);
+    }
+    espTmp = esp.readString();
+  }
+}
+
+void setup(void) {
+  Serial.begin(9600);
+  display.begin(9600);
+  esp.begin(9600);
+  lcd.begin(display);
+
+  pinMode(RELAY_ON_PIN, OUTPUT);
+  pinMode(RELAY_PLUS_PIN, OUTPUT);
+
+  initLCD();
+  initESP();
+  Serial.write("ESP connected\n");
+}
+
+void loop(void) {
+  float temperature0 = getTemp(ds0);
+  int tmp0 = (int) temperature0;
+  float temperature1 = getTemp(ds1);
+  int tmp1 = (int) temperature1;
+
+  lcd.setCursor(0, 1);
+  lcd.print("HLT: ");
+  lcd.print(tmp0);
+  lcd.print(" ; BT: ");
+  lcd.print(tmp1);
+
+  digitalWrite(RELAY_ON_PIN, ON);
+  delay(100);
+  digitalWrite(RELAY_PLUS_PIN, ON);
+  delay(100);
+  if (ON == LOW) {
+    ON = HIGH;
+  } else {
+    ON = LOW;
+  }
+
+  if (esp.available()) {
+    DeserializationError error = deserializeJson(doc, esp.readString());
+
+    if (error) {
+      Serial.print(F("deserializeJson() failed: "));
+      Serial.println(error.c_str());
+      return;
+    } else {
+      Serial.println(doc["status"].as<const char*>());
+    }
+  }
+
+  delay(200);
+}
+
+
+float getTemp(OneWire ds){
+  //returns the temperature from one DS18S20 in DEG Celsius
+
+  byte data[12];
+  byte addr[8];
+
+  if ( !ds.search(addr)) {
+      //no more sensors on chain, reset search
+      ds.reset_search();
+      return -1000;
+  }
+
+  if ( OneWire::crc8( addr, 7) != addr[7]) {
+      Serial.println("CRC is not valid!");
+      return -1000;
+  }
+
+  if ( addr[0] != 0x10 && addr[0] != 0x28) {
+      Serial.print("Device is not recognized");
+      return -1000;
+  }
+
+  ds.reset();
+  ds.select(addr);
+  ds.write(0x44,1); // start conversion, with parasite power on at the end
+
+  byte present = ds.reset();
+  ds.select(addr);    
+  ds.write(0xBE); // Read Scratchpad
+
+  for (int i = 0; i < 9; i++) { // we need 9 bytes
+    data[i] = ds.read();
+  }
+
+  ds.reset_search();
+
+  byte MSB = data[1];
+  byte LSB = data[0];
+
+  float tempRead = ((MSB << 8) | LSB); //using two's compliment
+  float TemperatureSum = tempRead / 16;
+
+//  return (TemperatureSum * 18 + 5)/10 + 32;
+  return TemperatureSum;
+}

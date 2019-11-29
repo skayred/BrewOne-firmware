@@ -1,17 +1,24 @@
 #ifndef TEMP_PROVIDER_H
 #define TEMP_PROVIDER_H
 
-#include <vector>
+#include <OneWire.h>
+#include "Queue.h"
 
 class TempProvider {
-  std::vector<float> lastTemps;
+    unsigned long lastTempTime;
+    OneWire hltDS;
+    OneWire bltDS;
+    DataQueue<float> lastTemps;
+private:
+    float getTemp(OneWire ds);
 
 public:
-  TempProvider();
-  void init(int hltPin, int bltPin);
-  float getHLTTemp();
-  float getBLTTemp();
-  bool isStable();
+    TempProvider();
+    TempProvider(int hltPin, int bltPin);
+    void init();
+    float getHLTTemp();
+    float getBLTTemp();
+    bool isStable();
 };
 
 #endif

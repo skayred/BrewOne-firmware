@@ -13,7 +13,8 @@ private:
 
 public:
   Heater();
-  void init(int on, int power);
+  Heater(int onn, int power);
+  void init();
   void turnOn();
   void turnOff();
   void increasePower(int steps);
